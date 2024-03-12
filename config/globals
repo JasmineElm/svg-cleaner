@@ -1,0 +1,6 @@
+# Global parameters
+# -----------------
+
+_VENV_DIR=".venv"
+# if editing this update the .gitignore
+
