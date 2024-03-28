@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+
+###  DEBUG          ###########################################################
+set -e -o errtrace -o pipefail
+# trap "echo ""errexit: line $LINENO. Exit code: $?"" >&2" ERR
+IFS=$'\n\t'
+
+###  DESCRIPTION    ###########################################################
+# A script to clean svgs
+
+### GLOBALS         ###########################################################
+source config/globals
+
+### VARIABLES       ###########################################################
+_SVGO_CONFIG="config/svgo.js"
+
+_needs_setup() {
+  if [ ! -d "$_VENV_DIR" ]; then
+    read -p "No virtual environment found. Would you like to set one up? (y/n) " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      ./setup.sh
+    else
+      echo "Exiting"
+      exit 1
+    fi
+  fi
+}
+
+_activate_venv() {
+  # shellcheck disable=SC1091
+  if [ ! -d "$_VENV_DIR" ]; then
+    echo "Error: No virtual environment found"
+    exit 1
+  fi
+  source "$_VENV_DIR/bin/activate"
+}
+
+_in_venv() {
+  # test if we are in the virtual environment using pip -V
+  if [[ ! $(pip -V) == *$_VENV_DIR* ]]; then
+    echo "Error: Not in virtual environment, activating"
+    _activate_venv
+  fi
+
+}
+
+_set_output_name() {
+  # set the output name for the cleaned file
+  local file="$1"
+  local output=""
+  local ext="${file##*.}"
+  local name="${file%.*}"
+  output="${name}_clean.${ext}"
+  echo "$output"
+}
+
+_vpype_clean() {
+  # Load defaults from commandfile: config/vpype.config
+  local file="$1"
+  vpype --verbose \
+    --include config/vpype.config \
+    read "$file" \
+    write "$file" \
+    stat
+}
+
+_svgo_clean() {
+  # clean svgs using svgo defaults
+  local infile="$1"
+  local outfile; outfile="$(_set_output_name "$infile")"
+  svgo --multipass -i "$infile" --config="$_SVGO_CONFIG" -o "$outfile"
+}
+
+_is_svg() {
+  local is_svg=0
+  local file="$1"
+  # test if input exists
+  if [ ! -e "$file" ]; then
+    echo "Error: $file does not exist"
+    exit 1
+  fi
+  if [ "$file" == "*.svg" ]; then
+    is_svg=1
+  fi
+  echo $is_svg
+}
+
+_clean_files() {
+  local input="$1"
+  # if input is a file ending in .svg remove the .svg
+  local is_svg
+  local output
+  is_svg=$(_is_svg "$input")
+  if [ "$is_svg" -eq 1 ]; then
+    output=$(_set_output_name "$input")
+    _svgo_clean "$input"
+    _vpype_clean "$output"
+  else
+    find "$input" -type f -name "*.svg" -print0 | while IFS= read -r -d $'\0' file; do
+      output=$(_set_output_name "$file")
+      _svgo_clean "$file"
+      _vpype_clean "$output"
+    done
+  fi
+}
+
+_main() {
+  _needs_setup
+  _in_venv
+  local input="$1"
+  _clean_files "$input"
+}
+
+_main "$@"
